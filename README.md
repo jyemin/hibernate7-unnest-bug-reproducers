@@ -38,19 +38,19 @@ Requires Java 21.
 
 ## The bugs
 
-### 1. `SqmFunctionJoin` is not first-class in SQM-to-SQL visitors
+### 1. Basic-array body predicates fail with `AssertionError`
 
-Test class: [`SqmFunctionJoinNotFirstClassTest`](src/test/java/com/example/hibernate/unnestbugs/SqmFunctionJoinNotFirstClassTest.java)
+Test class: [`BasicArrayBodyPredicateTest`](src/test/java/com/example/hibernate/unnestbugs/BasicArrayBodyPredicateTest.java)
 
-When Hibernate added `SqmFunctionJoin` / set-returning-function support, not every SQM visitor was extended to handle it. The test class contains two `@Nested` groups, each exercising a different visitor site that exposes the same underlying gap:
+HQL that references a basic-typed array element in a body predicate (sugar JOIN, explicit `lateral unnest(...)` JOIN, EXISTS over implicit collection path, or IN-subquery over the same) throws `AssertionError` from `SqmMappingModelHelper.resolveSqmPath`. Investigation revealed a *second* bug stacked behind it: a brittle cast in `BaseSqmToSqlAstConverter.visitHqlNumericLiteral` that fires once the first is addressed. Both must be fixed for any affected HQL form to work.
 
-- **`ResolveSqmPath`** (4 tests, H2): `SqmMappingModelHelper.resolveSqmPath` throws a bare `AssertionError` when resolving a path through a `SqmFunctionJoin`. Affected forms include sugar JOIN with a body predicate, EXISTS over an implicit collection path, IN-subquery over the same, and explicit `lateral unnest(...)` JOIN.
+### 2. Nested unnest via correlated subquery is blocked
 
-- **`CorrelationCast`** (2 tests, PostgreSQL dialect + stub ConnectionProvider): `ClassCastException: SqmFunctionJoin cannot be cast to SqmSingularValuedJoin` when an inner EXISTS subquery correlates to an outer EXISTS whose alias is a `SqmFunctionJoin`. Covers both the natural implicit-collection-path form and the outer-`lateral-unnest` mixed form.
+Test class: [`NestedUnnestCorrelationTest`](src/test/java/com/example/hibernate/unnestbugs/NestedUnnestCorrelationTest.java)
 
-Both groups likely require distinct code edits in distinct methods, but they share the same design fix: make `SqmFunctionJoin` a first-class citizen in SQM-to-SQL conversion.
+Nested EXISTS over an array-of-structs-each-containing-an-array fails with `ClassCastException: SqmFunctionJoin cannot be cast to SqmSingularValuedJoin` from `SqmSubQuery.correlate(Join)`. Investigation showed the cast is the outermost of three stacked issues; the deepest layer (recursive unnest through `AnonymousTupleType`) is a missing feature rather than a bug.
 
-### 2. HQL grammar rejects `LATERAL unnest(...)` inside subqueries
+### 3. HQL grammar rejects `LATERAL unnest(...)` inside subqueries
 
 Test class: [`HqlGrammarLateralUnnestInSubqueriesTest`](src/test/java/com/example/hibernate/unnestbugs/HqlGrammarLateralUnnestInSubqueriesTest.java)
 
@@ -58,7 +58,11 @@ Test class: [`HqlGrammarLateralUnnestInSubqueriesTest`](src/test/java/com/exampl
 - `WHERE EXISTS (SELECT 1 FROM lateral unnest(i.tags) t ...)`
 - `(SELECT count(*) FROM lateral unnest(i.tags) t ...)` in scalar SELECT subquery
 
-For contrast, the same `LATERAL unnest(...)` in the **outer** FROM (`FROM Item i JOIN lateral unnest(i.tags) t`) parses cleanly — the third test in the class asserts this. The grammar restriction is specific to subquery FROM clauses. This is a parser-layer issue, independent of Bug 1.
+For contrast, the same `LATERAL unnest(...)` in the **outer** FROM (`FROM Item i JOIN lateral unnest(i.tags) t`) parses cleanly — the third test in the class asserts this. The grammar restriction is specific to subquery FROM clauses. Parser-layer issue, independent of the other bugs.
+
+### Bonus: a latent NPE in `SqmFunctionJoin.getParent()`
+
+No reproducer test (it's reachable only by direct method invocation, not by any HQL). See [`sqm-function-join-get-parent-latent-npe.md`](https://github.com/jyemin/mongo-hibernate/blob/mqlv2/docs/upstream-feedback/hibernate-bugs/sqm-function-join-get-parent-latent-npe.md) — found while investigating bug 2.
 
 ## Discovery context
 
