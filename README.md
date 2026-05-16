@@ -1,8 +1,8 @@
 # Hibernate ORM 7 — `lateral unnest` / `FunctionJoin` bug reproducers
 
-This repo demonstrates three bugs in Hibernate ORM 7.3.4.Final's handling of HQL queries that involve `lateral unnest(...)` or collection-valued path expressions resolved through a `FunctionJoin`. Each bug has a dedicated test class with one or more JUnit reproducers.
+This repo demonstrates two bugs in Hibernate ORM 7.3.4.Final's handling of HQL queries that involve `lateral unnest(...)` or collection-valued path expressions resolved through a `FunctionJoin`. Each bug has a dedicated test class.
 
-The reproducers depend only on Hibernate ORM, the H2 driver, the PostgreSQL JDBC driver (used for `@Struct` type registration in the nested-EXISTS case; no live PostgreSQL server required), and JUnit 5.
+The reproducers depend only on Hibernate ORM, the H2 driver, the PostgreSQL JDBC driver (used for `@Struct` type registration; no live PostgreSQL server required), and JUnit 5.
 
 ## Setup
 
@@ -12,31 +12,27 @@ cd hibernate7-unnest-bug-reproducers
 gradle test    # or: ./gradlew test if you set up the wrapper
 ```
 
-All eight tests should pass — each one ASSERTS that the bug fires, so a green build means the bug still exists in Hibernate 7.3.4.Final. If Hibernate fixes any of them, the corresponding test will fail loudly.
+**These are regression tests written in the inverse direction.** Each test asserts the query executes successfully (or, in the nested-EXISTS case, reaches the JDBC layer). Against Hibernate 7.3.4.Final, **8 of 9 tests fail** — those failures are the bugs. The one test that passes is `outerFromWithLateralUnnest_parsesAndExecutes`, included as a contrast case to confirm the grammar restriction is specific to subquery FROM clauses. When Hibernate fixes a bug, the corresponding test transitions from failing to passing.
+
+Drop a `hibernate-core` SNAPSHOT into `build.gradle.kts` to verify a fix.
 
 Requires Java 21.
 
 ## The bugs
 
-### 1. `SqmMappingModelHelper.resolveSqmPath` AssertionError on `FunctionJoin` paths
+### 1. `SqmFunctionJoin` is not first-class in SQM-to-SQL visitors
 
-Test class: [`SqmResolveFunctionJoinPathTest`](src/test/java/com/example/hibernate/unnestbugs/SqmResolveFunctionJoinPathTest.java)
+Test class: [`SqmFunctionJoinNotFirstClassTest`](src/test/java/com/example/hibernate/unnestbugs/SqmFunctionJoinNotFirstClassTest.java)
 
-Bare `java.lang.AssertionError` (no message) from `SqmMappingModelHelper.resolveSqmPath` when HQL references a column on an alias bound to a `lateral unnest(...)` set-returning function or a basic-plural-attribute sugar join.
+When Hibernate added `SqmFunctionJoin` / set-returning-function support, not every SQM visitor was extended to handle it. The test class contains two `@Nested` groups, each exercising a different visitor site that exposes the same underlying gap:
 
-Four reproducers, all sharing the same root cause:
-- Body predicate on `JOIN LATERAL unnest(o.scalarArray) a WHERE a > ?`
-- Body predicate on sugar-form `JOIN o.scalarArray a WHERE a > ?`
-- `WHERE EXISTS (SELECT 1 FROM o.scalarArray a WHERE a > ?)`
-- `WHERE x IN (SELECT t FROM o.scalarArray t)` — type inference at `visitInSubQueryPredicate` calls into the same helper
+- **`ResolveSqmPath`** (4 tests, H2): `SqmMappingModelHelper.resolveSqmPath` throws a bare `AssertionError` when resolving a path through a `SqmFunctionJoin`. Affected forms include sugar JOIN with a body predicate, EXISTS over an implicit collection path, IN-subquery over the same, and explicit `lateral unnest(...)` JOIN.
 
-### 2. `ClassCastException: SqmFunctionJoin cannot be cast to SqmSingularValuedJoin` for nested EXISTS
+- **`CorrelationCast`** (2 tests, PostgreSQL dialect + stub ConnectionProvider): `ClassCastException: SqmFunctionJoin cannot be cast to SqmSingularValuedJoin` when an inner EXISTS subquery correlates to an outer EXISTS whose alias is a `SqmFunctionJoin`. Covers both the natural implicit-collection-path form and the outer-`lateral-unnest` mixed form.
 
-Test class: [`NestedExistsSqmFunctionJoinCastTest`](src/test/java/com/example/hibernate/unnestbugs/NestedExistsSqmFunctionJoinCastTest.java)
+Both groups likely require distinct code edits in distinct methods, but they share the same design fix: make `SqmFunctionJoin` a first-class citizen in SQM-to-SQL conversion.
 
-EXISTS subquery nested inside another EXISTS subquery, where the inner subquery's FROM references a collection-valued path on the outer's `lateral unnest` alias. Requires `@Struct` support, so uses `PostgreSQLDialect` with `hibernate.boot.allow_jdbc_metadata_access=false` and a stub `ConnectionProvider` — no live PostgreSQL server needed (the bug fires before SQL execution).
-
-### 3. HQL grammar rejects `LATERAL unnest(...)` inside subqueries
+### 2. HQL grammar rejects `LATERAL unnest(...)` inside subqueries
 
 Test class: [`HqlGrammarLateralUnnestInSubqueriesTest`](src/test/java/com/example/hibernate/unnestbugs/HqlGrammarLateralUnnestInSubqueriesTest.java)
 
@@ -44,7 +40,7 @@ Test class: [`HqlGrammarLateralUnnestInSubqueriesTest`](src/test/java/com/exampl
 - `WHERE EXISTS (SELECT 1 FROM lateral unnest(i.tags) t ...)`
 - `(SELECT count(*) FROM lateral unnest(i.tags) t ...)` in scalar SELECT subquery
 
-For contrast, the same `LATERAL unnest(...)` in the **outer** FROM (`FROM Item i JOIN lateral unnest(i.tags) t`) parses cleanly — the third test in the class asserts this. The grammar restriction is specific to subquery FROM clauses.
+For contrast, the same `LATERAL unnest(...)` in the **outer** FROM (`FROM Item i JOIN lateral unnest(i.tags) t`) parses cleanly — the third test in the class asserts this. The grammar restriction is specific to subquery FROM clauses. This is a parser-layer issue, independent of Bug 1.
 
 ## Discovery context
 
