@@ -66,7 +66,7 @@ No reproducer test (it's reachable only by direct method invocation, not by any 
 
 ## Discovery context
 
-These bugs were surfaced during work on a custom dialect that translates HQL queries involving collection-valued paths (and explicit `lateral unnest`) into a non-SQL backend. The backend's own pipeline syntax can evaluate every HQL form below correctly — Hibernate's SQM and grammar layers are what prevent the queries from compiling. The reproducers in this repo use H2 and PostgreSQL exclusively, so the issues are reproducible against any dialect that registers `unnest()` and supports `@Struct`.
+These bugs were surfaced during work on a custom dialect that translates HQL queries involving collection-valued paths (and explicit `lateral unnest`) into a non-SQL backend. The backend's own pipeline syntax can evaluate every HQL form below correctly — Hibernate's SQM and grammar layers are what prevent the queries from compiling. The reproducers in this repo run against PostgreSQL, but the bugs are at the HQL/SQM layer and are reproducible against any dialect that registers `unnest()` and supports `@Struct`.
 
 ## License
 
