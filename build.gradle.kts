@@ -3,6 +3,10 @@ plugins {
 }
 
 repositories {
+    // mavenLocal() is here so you can verify a Hibernate SNAPSHOT containing a fix by
+    // bumping the hibernate-core coordinate below and running `./gradlew publishToMavenLocal`
+    // in your local hibernate-orm checkout.
+    mavenLocal()
     mavenCentral()
 }
 
@@ -14,10 +18,6 @@ java {
 
 dependencies {
     testImplementation("org.hibernate.orm:hibernate-core:7.3.4.Final")
-    testImplementation("com.h2database:h2:2.3.232")
-    // Driver is required so Hibernate can register the dialect; no live PG server is used —
-    // the nested-EXISTS reproducer runs HQL-→SQM-→SQL-AST conversion only, which fails before
-    // any SQL execution.
     testImplementation("org.postgresql:postgresql:42.7.4")
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
     testImplementation("org.assertj:assertj-core:3.27.3")

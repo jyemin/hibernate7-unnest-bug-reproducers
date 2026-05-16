@@ -1,13 +1,10 @@
 package com.example.hibernate.unnestbugs;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
-import static org.assertj.core.api.Assertions.catchThrowable;
 
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import java.sql.SQLException;
 import org.hibernate.SessionFactory;
 import org.hibernate.annotations.Struct;
 import org.junit.jupiter.api.AfterAll;
@@ -22,17 +19,18 @@ import org.junit.jupiter.api.TestInstance;
  * desugars to one) is not first-class in Hibernate's SQM-to-SQL visitors. Two distinct
  * failure sites have been observed; both stem from the same omission.
  *
- * <p>Each test asserts the query reaches a healthy code path. With the bug present, all tests
- * fail with the specific exception named in their group's Javadoc. When the gap is fixed, the
- * tests transition from failing to passing.
+ * <p>Each test asserts the query executes without exception. With the bug present, every test
+ * fails with the specific exception named in their group's Javadoc. When the gap is fixed,
+ * the tests transition from failing to passing.
+ *
+ * <p>Both groups run against a live PostgreSQL — see the README for setup.
  */
 class SqmFunctionJoinNotFirstClassTest {
 
     /**
      * <b>Failure A — {@code SqmMappingModelHelper.resolveSqmPath}.</b> Bare
      * {@link AssertionError} (no message) when resolving a SQM path through a
-     * {@code SqmFunctionJoin} alias. Demonstrated via four HQL forms that all trip the same
-     * failure, against H2 + Hibernate 7.3.4.Final.
+     * {@code SqmFunctionJoin} alias. Demonstrated via four HQL forms.
      */
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     @Nested
@@ -100,12 +98,6 @@ class SqmFunctionJoinNotFirstClassTest {
      * {@link ClassCastException}{@code : SqmFunctionJoin cannot be cast to SqmSingularValuedJoin}
      * when an inner EXISTS subquery's FROM references a collection-valued path on the outer
      * EXISTS's alias.
-     *
-     * <p>Uses {@code PostgreSQLDialect} (H2 lacks {@code @Struct} support) with a stub
-     * {@code ConnectionProvider} — no live PostgreSQL server. Each test asserts the resulting
-     * exception is a {@code SQLException} from the stub (i.e., SQM-to-SQL conversion completed
-     * and Hibernate reached the JDBC layer). To fully verify end-to-end, swap the stub for a
-     * real PostgreSQL connection.
      */
     @TestInstance(TestInstance.Lifecycle.PER_CLASS)
     @Nested
@@ -136,7 +128,7 @@ class SqmFunctionJoinNotFirstClassTest {
 
         @BeforeAll
         void setUp() {
-            sf = SupportInfra.buildPostgresSessionFactory(OrderEntity.class);
+            sf = SupportInfra.buildSessionFactory(OrderEntity.class);
         }
 
         @AfterAll
@@ -145,49 +137,31 @@ class SqmFunctionJoinNotFirstClassTest {
         }
 
         @Test
-        void nestedExistsOverNestedArray_implicitCollectionPath_reachesJdbcLayer() {
+        void nestedExistsOverNestedArray_implicitCollectionPath_succeeds() {
             // Natural HQL: FROM OrderEntity o WHERE EXISTS (
             //                SELECT 1 FROM o.lineItems a WHERE EXISTS (
             //                  SELECT 1 FROM a.taxes b WHERE b.code = 'VAT'))
-            var thrown = catchThrowable(() -> sf.inSession(s -> s.createSelectionQuery(
-                            "from OrderEntity o where exists (select 1 from o.lineItems a "
-                                    + "where exists (select 1 from a.taxes b where b.code = 'VAT'))",
-                            OrderEntity.class)
-                    .getResultList()));
-            assertThat(thrown).isNotNull();
-            assertThat(rootCauseOf(thrown))
-                    .as("expected to reach JDBC layer (stub SQLException) — meaning SQM conversion "
-                            + "succeeded; got: %s",
-                            rootCauseOf(thrown))
-                    .isInstanceOf(SQLException.class)
-                    .hasMessageContaining("StubConnectionProvider");
+            assertThatNoException()
+                    .isThrownBy(() -> sf.inSession(s -> s.createSelectionQuery(
+                                    "from OrderEntity o where exists (select 1 from o.lineItems a "
+                                            + "where exists (select 1 from a.taxes b where b.code = 'VAT'))",
+                                    OrderEntity.class)
+                            .getResultList()));
         }
 
         @Test
-        void nestedExistsOverNestedArray_outerLateralUnnestForm_reachesJdbcLayer() {
+        void nestedExistsOverNestedArray_outerLateralUnnestForm_succeeds() {
             // Alternative: outer FROM uses explicit `lateral unnest(...)`; inner EXISTS stays
             // implicit. The fully-explicit form (lateral unnest inside the inner EXISTS too)
             // doesn't parse — see HqlGrammarLateralUnnestInSubqueriesTest.
             //   FROM OrderEntity o JOIN lateral unnest(o.lineItems) a WHERE EXISTS (
             //     SELECT 1 FROM a.taxes b WHERE b.code = 'VAT')
-            var thrown = catchThrowable(() -> sf.inSession(s -> s.createSelectionQuery(
-                            "from OrderEntity o join lateral unnest(o.lineItems) a "
-                                    + "where exists (select 1 from a.taxes b where b.code = 'VAT')",
-                            OrderEntity.class)
-                    .getResultList()));
-            assertThat(thrown).isNotNull();
-            assertThat(rootCauseOf(thrown))
-                    .as("expected to reach JDBC layer (stub SQLException); got: %s", rootCauseOf(thrown))
-                    .isInstanceOf(SQLException.class)
-                    .hasMessageContaining("StubConnectionProvider");
-        }
-
-        private Throwable rootCauseOf(Throwable t) {
-            var c = t;
-            while (c.getCause() != null && c.getCause() != c) {
-                c = c.getCause();
-            }
-            return c;
+            assertThatNoException()
+                    .isThrownBy(() -> sf.inSession(s -> s.createSelectionQuery(
+                                    "from OrderEntity o join lateral unnest(o.lineItems) a "
+                                            + "where exists (select 1 from a.taxes b where b.code = 'VAT')",
+                                    OrderEntity.class)
+                            .getResultList()));
         }
     }
 }

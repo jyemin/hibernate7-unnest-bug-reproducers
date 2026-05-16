@@ -2,9 +2,27 @@
 
 This repo demonstrates two bugs in Hibernate ORM 7.3.4.Final's handling of HQL queries that involve `lateral unnest(...)` or collection-valued path expressions resolved through a `FunctionJoin`. Each bug has a dedicated test class.
 
-The reproducers depend only on Hibernate ORM, the H2 driver, the PostgreSQL JDBC driver (used for `@Struct` type registration; no live PostgreSQL server required), and JUnit 5.
+The reproducers depend on Hibernate ORM, the PostgreSQL JDBC driver, and JUnit 5.
 
 ## Setup
+
+A running PostgreSQL is required. Quickstart on macOS:
+
+```bash
+brew install postgresql@17
+brew services start postgresql@17
+createdb unnestbugs
+```
+
+By default the tests connect to `jdbc:postgresql://localhost:5432/unnestbugs` as the current OS user with no password. Override with system properties if needed:
+
+```bash
+gradle test -Dunnestbugs.jdbcUrl=jdbc:postgresql://host:5432/db \
+            -Dunnestbugs.dbUser=alice \
+            -Dunnestbugs.dbPassword=secret
+```
+
+Then:
 
 ```bash
 git clone <this-repo>
@@ -12,9 +30,9 @@ cd hibernate7-unnest-bug-reproducers
 gradle test    # or: ./gradlew test if you set up the wrapper
 ```
 
-**These are regression tests written in the inverse direction.** Each test asserts the query executes successfully (or, in the nested-EXISTS case, reaches the JDBC layer). Against Hibernate 7.3.4.Final, **8 of 9 tests fail** — those failures are the bugs. The one test that passes is `outerFromWithLateralUnnest_parsesAndExecutes`, included as a contrast case to confirm the grammar restriction is specific to subquery FROM clauses. When Hibernate fixes a bug, the corresponding test transitions from failing to passing.
+**These are regression tests written in the inverse direction.** Each test asserts the query executes successfully. Against Hibernate 7.3.4.Final, **most tests fail** — those failures are the bugs. The one test that passes is `outerFromWithLateralUnnest_parsesAndExecutes`, included as a contrast case to confirm the grammar restriction is specific to subquery FROM clauses. When Hibernate fixes a bug, the corresponding test transitions from failing to passing.
 
-Drop a `hibernate-core` SNAPSHOT into `build.gradle.kts` to verify a fix.
+To verify a Hibernate SNAPSHOT containing a fix: run `./gradlew publishToMavenLocal` in your local hibernate-orm checkout, then update the `hibernate-core` coordinate in `build.gradle.kts` to the SNAPSHOT version. The `mavenLocal()` repository is already configured.
 
 Requires Java 21.
 
