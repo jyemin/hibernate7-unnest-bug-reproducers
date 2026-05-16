@@ -27,8 +27,6 @@ import org.junit.jupiter.api.TestInstance;
  *   <li>IN-subquery whose projected expression is on an unnest alias (forces type inference
  *       to resolve through the function-join path).
  * </ol>
- *
- * @see <a href="../../../../../../../../mongo-hibernate/docs/upstream-feedback/hibernate-bugs/sqm-resolve-function-join-path.md">bug report</a>
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class SqmResolveFunctionJoinPathTest {

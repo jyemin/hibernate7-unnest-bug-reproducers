@@ -2,7 +2,7 @@
 
 This repo demonstrates three bugs in Hibernate ORM 7.3.4.Final's handling of HQL queries that involve `lateral unnest(...)` or collection-valued path expressions resolved through a `FunctionJoin`. Each bug has a dedicated test class with one or more JUnit reproducers.
 
-The reproducers depend only on Hibernate ORM, the H2 driver, the PostgreSQL JDBC driver (for type registration — no live PG required), and JUnit 5. **No MongoDB**.
+The reproducers depend only on Hibernate ORM, the H2 driver, the PostgreSQL JDBC driver (used for `@Struct` type registration in the nested-EXISTS case; no live PostgreSQL server required), and JUnit 5.
 
 ## Setup
 
@@ -48,12 +48,8 @@ For contrast, the same `LATERAL unnest(...)` in the **outer** FROM (`FROM Item i
 
 ## Discovery context
 
-These bugs were surfaced during the MongoDB Hibernate extension's effort to translate HQL `$elemMatch`-style queries (over arrays of embedded documents) into MongoDB MQLv2 `any(...)` and `unwind` operations. The MQLv2 server-side equivalents of every HQL form above execute correctly — Hibernate's SQM/grammar layers are what prevent the queries from compiling.
-
-The detailed Phase 0-4 design and findings live in the MongoDB Hibernate extension's `mqlv2` branch:
-- Design doc: `docs/superpowers/specs/2026-05-15-mqlv2-elemmatch-via-unnest-design.md`
-- Bug-report markdown (one per bug, mirroring this repo's test classes): `docs/upstream-feedback/hibernate-bugs/`
+These bugs were surfaced during work on a custom dialect that translates HQL queries involving collection-valued paths (and explicit `lateral unnest`) into a non-SQL backend. The backend's own pipeline syntax can evaluate every HQL form below correctly — Hibernate's SQM and grammar layers are what prevent the queries from compiling. The reproducers in this repo use H2 and PostgreSQL exclusively, so the issues are reproducible against any dialect that registers `unnest()` and supports `@Struct`.
 
 ## License
 
-Apache 2.0 (matching Hibernate ORM and MongoDB Hibernate extension).
+Apache 2.0 (matching Hibernate ORM).

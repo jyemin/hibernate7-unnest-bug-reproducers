@@ -19,8 +19,6 @@ import org.junit.jupiter.api.TestInstance;
  * when an EXISTS subquery is nested inside another EXISTS subquery and the inner subquery's
  * FROM references a collection-valued path on the outer EXISTS's alias (which is itself bound
  * to a {@code lateral unnest} set-returning function).
- *
- * @see <a href="../../../../../../../../mongo-hibernate/docs/upstream-feedback/hibernate-bugs/nested-exists-sqm-function-join-cast.md">bug report</a>
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NestedExistsSqmFunctionJoinCastTest {

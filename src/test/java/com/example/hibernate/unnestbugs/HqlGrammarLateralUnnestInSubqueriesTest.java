@@ -18,8 +18,6 @@ import org.junit.jupiter.api.TestInstance;
  * SELECT subqueries with {@link SyntaxException}, while accepting it as a JOIN target in the
  * outer FROM clause. The SQL:1999 standard permits {@code LATERAL} in any
  * {@code <table reference>} position.
- *
- * @see <a href="../../../../../../../../mongo-hibernate/docs/upstream-feedback/hibernate-bugs/hql-grammar-lateral-unnest-in-subqueries.md">bug report</a>
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class HqlGrammarLateralUnnestInSubqueriesTest {
